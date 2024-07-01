@@ -85,6 +85,7 @@ pub mut:
 	build_tools   bool // builds only executables in cmd/tools; used by `v build-tools'
 	silent_mode   bool
 	show_stats    bool
+	show_asserts  bool
 	progress_mode bool
 	root_relative bool // used by CI runs, so that the output is stable everywhere
 	nmessages     chan LogMessage // many publishers, single consumer/printer
@@ -280,6 +281,8 @@ pub fn new_test_session(_vargs string, will_compile bool) TestSession {
 		}
 		if testing.github_job == 'tests-sanitize-memory-clang' {
 			skip_files << 'vlib/net/openssl/openssl_compiles_test.c.v'
+			// Fails compilation with: `/usr/bin/ld: /lib/x86_64-linux-gnu/libpthread.so.0: error adding symbols: DSO missing from command line`
+			skip_files << 'examples/sokol/sounds/simple_sin_tones.v'
 		}
 		if testing.github_job != 'misc-tooling' {
 			// These examples need .h files that are produced from the supplied .glsl files,
@@ -301,7 +304,7 @@ pub fn new_test_session(_vargs string, will_compile bool) TestSession {
 	vargs := _vargs.replace('-progress', '')
 	vexe := pref.vexe_path()
 	vroot := os.dir(vexe)
-	hash := '${sync.thread_id().hex()}_${time.sys_mono_now()}'
+	hash := '${sync.thread_id().hex()}_${rand.ulid()}'
 	new_vtmp_dir := setup_new_vtmp_folder(hash)
 	if term.can_show_color_on_stderr() {
 		os.setenv('VCOLORS', 'always', true)
@@ -312,6 +315,7 @@ pub fn new_test_session(_vargs string, will_compile bool) TestSession {
 		skip_files: skip_files
 		fail_fast: testing.fail_fast
 		show_stats: '-stats' in vargs.split(' ')
+		show_asserts: '-show-asserts' in vargs.split(' ')
 		vargs: vargs
 		vtmp_dir: new_vtmp_dir
 		hash: hash
@@ -502,7 +506,8 @@ fn worker_trunner(mut p pool.PoolProcessor, idx int, thread_id int) voidptr {
 	// where an executable is not writable, if it is running).
 	// Note, that the common session temporary folder ts.vtmp_dir,
 	// will be removed after all tests are done.
-	mut test_folder_path := os.join_path(ts.vtmp_dir, rand.ulid())
+	test_id := '${idx}_${thread_id}'
+	mut test_folder_path := os.join_path(ts.vtmp_dir, test_id)
 	if ts.build_tools {
 		// `v build-tools`, produce all executables in the same session folder, so that they can be copied later:
 		test_folder_path = ts.vtmp_dir
@@ -655,6 +660,9 @@ fn worker_trunner(mut p pool.PoolProcessor, idx int, thread_id int) voidptr {
 		mut r := os.execute(run_cmd)
 		cmd_duration = d_cmd.elapsed()
 		ts.append_message_with_duration(.cmd_end, r.output, cmd_duration, mtc)
+		if ts.show_asserts && r.exit_code == 0 {
+			println(r.output.split_into_lines().filter(it.contains(' assert')).join('\n'))
+		}
 		if r.exit_code != 0 {
 			mut details := get_test_details(file)
 			mut trimmed_output := r.output.trim_space()
