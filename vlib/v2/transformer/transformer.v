@@ -2514,12 +2514,9 @@ fn (mut t Transformer) transform_global_decl(decl ast.GlobalDecl) ast.GlobalDecl
 //   b = _tuple_tN.arg1
 // This handles tuple-returning calls when cleanc can't resolve the tuple type.
 fn (mut t Transformer) try_expand_tuple_call_assign(stmt ast.AssignStmt) ?[]ast.Stmt {
-	tuple_lhs := if stmt.lhs.len > 1 {
-		stmt.lhs
-	} else if stmt.lhs.len == 1 && stmt.lhs[0] is ast.Tuple {
-		(stmt.lhs[0] as ast.Tuple).exprs
-	} else {
-		return none
+	mut tuple_lhs := stmt.lhs
+	if stmt.lhs.len == 1 && stmt.lhs[0] is ast.Tuple {
+		tuple_lhs = (stmt.lhs[0] as ast.Tuple).exprs
 	}
 	n := tuple_lhs.len
 	if n < 2 {
